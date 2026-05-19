@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #000000;
+  --text: #ffffff;
+  --neon: #39ff14;
+  --border-thick: 2px solid var(--text);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-text: var(--text);
+  --color-neon: var(--neon);
+  --font-mono: var(--font-brutalist), ui-monospace, monospace;
+}
+
+* {
+  border-radius: 0 !important;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-brutalist), ui-monospace, monospace;
+}
+
+.label {
+  @apply font-mono text-xs uppercase tracking-widest;
+}
+
+.brutalist-input {
+  @apply bg-bg border-2 border-text text-text px-3 py-2 font-mono text-sm outline-none w-full focus:border-[var(--neon)] focus:text-[var(--neon)];
+}
+
+.brutalist-btn {
+  @apply border-2 border-text px-6 py-3 font-mono text-xs uppercase tracking-widest bg-bg text-text transition-colors hover:border-[var(--neon)] hover:text-[var(--neon)] hover:bg-black disabled:opacity-40;
+}
+
+.brutalist-btn-active {
+  @apply border-[var(--neon)] text-[var(--neon)];
+}
