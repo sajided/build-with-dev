@@ -141,6 +141,20 @@ function looksLikeGeminiQuotaError(e: unknown): boolean {
   );
 }
 
+/** 503 / overloaded — retry same model briefly, then try next model */
+function looksLikeTransientGeminiError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return (
+    looksLikeGeminiQuotaError(e) ||
+    msg.includes("503") ||
+    /service unavailable/i.test(msg) ||
+    /high demand/i.test(msg) ||
+    msg.includes("UNAVAILABLE") ||
+    /overload/i.test(msg) ||
+    /try again later/i.test(msg)
+  );
+}
+
 async function sleep(ms: number) {
   await new Promise((r) => setTimeout(r, ms));
 }
@@ -151,11 +165,15 @@ function backoffMsFromError(e: unknown, attempt: number): number {
   if (retrySec) {
     return Math.min(120_000, Math.ceil(Number.parseFloat(retrySec[1]) * 1000) + 500);
   }
+  /* 503 "try again later" — short waits; quota 429 sometimes longer */
+  if (/503|\bUnavailable\b|high demand/i.test(msg)) {
+    return Math.min(45_000, 1500 * 2 ** attempt + Math.floor(Math.random() * 400));
+  }
   return Math.min(60_000, 2500 * 2 ** attempt);
 }
 
 /**
- * Retry same model on 429/quota a few times, then try next model ID.
+ * Retry transient errors on the same model, then try next model ID.
  */
 async function generateWithModelFallback<TResult>(
   generate: (modelId: string) => Promise<TResult>,
@@ -170,12 +188,15 @@ async function generateWithModelFallback<TResult>(
       } catch (e) {
         const msg =
           e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-        if (looksLikeGeminiQuotaError(e) && attempt < 3) {
+        if (
+          looksLikeTransientGeminiError(e) &&
+          attempt < 3
+        ) {
           await sleep(backoffMsFromError(e, attempt));
           continue;
         }
-        if (looksLikeGeminiQuotaError(e)) {
-          errors.push(`[${modelId}] quota/rate (${msg.slice(0, 200)})`);
+        if (looksLikeTransientGeminiError(e)) {
+          errors.push(`[${modelId}] ${msg.slice(0, 220)}`);
           break;
         }
         throw e;
