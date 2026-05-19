@@ -5,6 +5,7 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { useSessionReady } from "@/components/EnsureSession";
 import { ThreePsModal } from "@/components/modals/ThreePsModal";
 import { UnblockFlow } from "@/components/modals/UnblockFlow";
+import { readFetchErrorDetail } from "@/lib/read-fetch-error";
 import { createClient } from "@/lib/supabase/client";
 import type { BlockRow, ChatMessageRow, DayRow } from "@/lib/types";
 import Link from "next/link";
@@ -28,6 +29,7 @@ export default function TodayPage() {
   const [threeBlock, setThreeBlock] = useState<BlockRow | null>(null);
   const [unstickBlock, setUnstickBlock] = useState<BlockRow | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
+  const [coachFetchError, setCoachFetchError] = useState<string | null>(null);
 
   const pullDaySnapshot = useCallback(
     async (dayId: string) => {
@@ -176,6 +178,8 @@ export default function TodayPage() {
   async function handleSend(text: string) {
     if (!sessionReady || !day) return;
 
+    setCoachFetchError(null);
+
     const {
       data: { user: initialUser },
     } = await supabase.auth.getUser();
@@ -212,8 +216,9 @@ export default function TodayPage() {
         body: JSON.stringify({ dayId: day.id }),
       });
       if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        console.error(body);
+        const detail = await readFetchErrorDetail(response);
+        console.warn("[/api/chat]", response.status, detail);
+        setCoachFetchError(detail);
       }
       await pullDaySnapshot(day.id);
     } finally {
@@ -231,9 +236,9 @@ export default function TodayPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ date: iso }),
       });
-      const body = await response.json().catch(() => null);
       if (!response.ok) {
-        console.error(body);
+        const detail = await readFetchErrorDetail(response);
+        console.warn("[/api/receipt]", response.status, detail);
       }
       router.push(`/receipt/${iso}`);
     } finally {
@@ -296,15 +301,33 @@ export default function TodayPage() {
       </header>
 
       <main className="flex-1 px-8 py-8 grid lg:grid-cols-2 gap-8">
-        <div className="h-[720px]">
+        <div className="h-[720px] flex flex-col gap-4 min-h-0">
+          {coachFetchError && (
+            <div
+              role="alert"
+              className="shrink-0 border-2 border-red-500 text-red-400 text-[11px] font-mono p-4 uppercase"
+            >
+              <p className="label text-white/80 mb-2">Coach request failed</p>
+              <p className="whitespace-pre-wrap break-words">{coachFetchError}</p>
+              <button
+                type="button"
+                className="mt-3 brutalist-btn border-white/40 text-white/70 text-[10px] py-1 px-3"
+                onClick={() => setCoachFetchError(null)}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+          <div className="flex-1 min-h-0">
           <ChatPanel
             dayId={day?.id ?? null}
             messages={messages}
             sending={busyChat}
             onSend={handleSend}
           />
+          </div>
         </div>
-        <div className="h-[720px] overflow-hidden">
+        <div className="h-[720px] min-h-0 overflow-hidden flex flex-col">
           <CalendarGrid
             blocks={blocks}
             dayPriorityFlag={day?.coaching_priority_flag ?? null}

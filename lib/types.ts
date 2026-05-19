@@ -56,6 +56,8 @@ export type GeminiBlockPayload = {
 export type GeminiChatResult = {
   assistantMessage: string;
   scheduleComplete?: boolean;
+  /** True if the JSON had scheduleComplete before we normalize missing adventure/side quests */
+  modelDeclaredScheduleComplete?: boolean;
   coachingPriorityFlag?: string | null;
   dailyAdventure?: string | null;
   sideQuests?: string[] | null;

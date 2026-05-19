@@ -27,8 +27,52 @@ Rules:
 
 Blocks must use 24-hour HH:MM, non-overlapping, realistic durations. Prefer same calendar day unless user specifies otherwise.
 
+Never tell the user something is "on the schedule" unless the same item appears in blocks with correct startTime/endTime (24-hour HH:MM). Empty blocks means not scheduled in the app.
+
 When anchors are unclear or adventure/side quests are not chosen yet, scheduleComplete MUST be false and blocks MAY be empty.
 When schedule is finalized and anchored, scheduleComplete MUST be true, dailyAdventure and exactly two sideQuests populated, coachingMessage concise, blocks cover the day's plan.`;
+
+
+function normalizeBlockTime(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(t)) return t.slice(0, 5);
+  if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)) {
+    const [hs, ms] = t.split(":");
+    const h = Number.parseInt(hs, 10);
+    const mins = ms.slice(0, 2);
+    if (
+      Number.isFinite(h) &&
+      h >= 0 &&
+      h <= 23 &&
+      /^\d{2}$/.test(mins)
+    ) {
+      return `${String(h).padStart(2, "0")}:${mins}`;
+    }
+    return "";
+  }
+  const m12 = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(t.replace(/\s+/g, " "));
+  if (m12) {
+    let h = Number.parseInt(m12[1], 10);
+    const min = m12[2].padStart(2, "0");
+    const ap = m12[3].toUpperCase();
+    if (ap === "PM" && h < 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    if (!Number.isFinite(h) || h < 0 || h > 23) return "";
+    return `${String(h).padStart(2, "0")}:${min}`;
+  }
+  /* e.g. "7 PM" without minutes */
+  const mWord = /^(\d{1,2})\s*(AM|PM)$/i.exec(t.replace(/\s+/g, " "));
+  if (mWord) {
+    let h = Number.parseInt(mWord[1], 10);
+    const ap = mWord[2].toUpperCase();
+    if (ap === "PM" && h < 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    if (!Number.isFinite(h) || h < 0 || h > 23) return "";
+    return `${String(h).padStart(2, "0")}:00`;
+  }
+  return "";
+}
 
 
 function jsonFromModelText(text: string): unknown {
@@ -49,6 +93,8 @@ export function parseGeminiChatResult(payload: unknown): GeminiChatResult {
 
   let scheduleComplete =
     typeof p.scheduleComplete === "boolean" ? p.scheduleComplete : false;
+  /** Model asserted day is finalized; parser may downgrade for inconsistent metadata. */
+  const modelDeclaredScheduleComplete = scheduleComplete;
 
   const coachingPriorityFlag =
     typeof p.coachingPriorityFlag === "string" ? p.coachingPriorityFlag : null;
@@ -81,12 +127,14 @@ export function parseGeminiChatResult(payload: unknown): GeminiChatResult {
       typeof o.startTime === "string" ? o.startTime : "";
     const endTime =
       typeof o.endTime === "string" ? o.endTime : "";
-    if (!taskName || !startTime || !endTime) return [];
+    const startTimeNorm = normalizeBlockTime(startTime);
+    const endTimeNorm = normalizeBlockTime(endTime);
+    if (!taskName || !startTimeNorm || !endTimeNorm) return [];
     const type =
       typeof o.type === "string" && allowedTypes.has(o.type)
         ? (o.type as GeminiBlockPayload["type"])
         : "work";
-    return [{ taskName, startTime, endTime, type }];
+    return [{ taskName, startTime: startTimeNorm, endTime: endTimeNorm, type }];
   });
 
   /* Heuristic: if coach filled blocks with adventure/tags, insist complete stays false until explicit */
@@ -97,6 +145,7 @@ export function parseGeminiChatResult(payload: unknown): GeminiChatResult {
   return {
     assistantMessage: assistantMessage || "Proceed.",
     scheduleComplete,
+    modelDeclaredScheduleComplete,
     coachingPriorityFlag,
     dailyAdventure,
     sideQuests,

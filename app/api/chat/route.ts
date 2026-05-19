@@ -54,7 +54,12 @@ export async function POST(req: Request) {
         .eq("id", dayId);
     }
 
-    if (result.scheduleComplete && result.blocks && result.blocks.length > 0) {
+    const shouldPersistBlocks =
+      Boolean(result.blocks?.length) &&
+      (Boolean(result.scheduleComplete) ||
+        result.modelDeclaredScheduleComplete === true);
+
+    if (shouldPersistBlocks) {
       await supabase.from("blocks").delete().eq("day_id", dayId);
 
       const rows =
@@ -75,7 +80,9 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: insErr.message }, { status: 500 });
         }
       }
+    }
 
+    if (result.scheduleComplete) {
       await supabase
         .from("days")
         .update({
